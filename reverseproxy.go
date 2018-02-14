@@ -58,7 +58,7 @@ type ReverseProxy struct {
 	// ModifyResponse is an optional function that
 	// modifies the Response from the backend.
 	// If it returns an error, the proxy returns a StatusBadGateway error.
-	ModifyResponse func(*http.Response) error
+	ModifyResponse func(*http.Response, time.Duration) error
 }
 
 // A BufferPool is an interface for getting and returning temporary
@@ -198,12 +198,16 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		outreq.Header.Set("X-Forwarded-For", clientIP)
 	}
 
+	started := time.Now()
+
 	res, err := transport.RoundTrip(outreq)
 	if err != nil {
 		p.logf("http: proxy error: %v", err)
 		rw.WriteHeader(http.StatusBadGateway)
 		return
 	}
+
+	took := time.Since(started)
 
 	// Remove hop-by-hop headers listed in the
 	// "Connection" header of the response.
@@ -220,7 +224,7 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	if p.ModifyResponse != nil {
-		if err := p.ModifyResponse(res); err != nil {
+		if err := p.ModifyResponse(res, took); err != nil {
 			p.logf("http: proxy error: %v", err)
 			rw.WriteHeader(http.StatusBadGateway)
 			return
